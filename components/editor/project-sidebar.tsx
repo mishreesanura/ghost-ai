@@ -10,12 +10,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ProjectData } from "@/hooks/use-project-dialogs";
+import { useRouter } from "next/navigation";
+import { ProjectData } from "@/hooks/use-project-actions";
 
 interface ProjectSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  projects: ProjectData[];
+  ownedProjects: ProjectData[];
+  sharedProjects: ProjectData[];
   onNewProject: () => void;
   onRenameProject: (project: ProjectData) => void;
   onDeleteProject: (project: ProjectData) => void;
@@ -24,13 +26,18 @@ interface ProjectSidebarProps {
 export function ProjectSidebar({ 
   isOpen, 
   onClose,
-  projects = [],
+  ownedProjects = [],
+  sharedProjects = [],
   onNewProject,
   onRenameProject,
   onDeleteProject
 }: ProjectSidebarProps) {
-  const myProjects = projects.filter(p => p.isOwned);
-  const sharedProjects = projects.filter(p => !p.isOwned);
+  const router = useRouter();
+
+  const handleProjectClick = (projectId: string) => {
+    onClose();
+    router.push(`/editor/${projectId}`);
+  };
 
   return (
     <>
@@ -85,7 +92,7 @@ export function ProjectSidebar({
               value="my-projects"
               className="flex-1 flex flex-col gap-2 mt-2"
             >
-              {myProjects.length === 0 ? (
+              {ownedProjects.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-4 border border-dashed border-default rounded-2xl min-h-[250px]">
                   <Folder className="h-8 w-8 text-text-muted mb-3" />
                   <h3 className="text-sm font-medium text-text-primary mb-1">No projects found</h3>
@@ -94,9 +101,12 @@ export function ProjectSidebar({
                   </p>
                 </div>
               ) : (
-                myProjects.map((project) => (
+                ownedProjects.map((project) => (
                   <div key={project.id} className="group flex items-center justify-between p-3 rounded-lg hover:bg-subtle transition-colors cursor-pointer border border-transparent hover:border-default">
-                    <div className="flex items-center gap-3 overflow-hidden">
+                    <div 
+                      onClick={() => handleProjectClick(project.id)}
+                      className="flex-1 flex items-center gap-3 overflow-hidden"
+                    >
                       <Folder className="h-4 w-4 text-accent-primary shrink-0" />
                       <div className="truncate">
                         <div className="text-sm font-medium text-text-primary truncate">{project.name}</div>
@@ -140,7 +150,10 @@ export function ProjectSidebar({
               ) : (
                 sharedProjects.map((project) => (
                   <div key={project.id} className="group flex items-center justify-between p-3 rounded-lg hover:bg-subtle transition-colors cursor-pointer border border-transparent hover:border-default">
-                    <div className="flex items-center gap-3 overflow-hidden">
+                    <div 
+                      onClick={() => handleProjectClick(project.id)}
+                      className="flex-1 flex items-center gap-3 overflow-hidden"
+                    >
                       <Users className="h-4 w-4 text-accent-ai shrink-0" />
                       <div className="truncate">
                         <div className="text-sm font-medium text-text-primary truncate">{project.name}</div>

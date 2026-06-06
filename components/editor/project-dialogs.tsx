@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DialogType, ProjectData } from "@/hooks/use-project-dialogs";
+import { DialogType, ProjectData } from "@/hooks/use-project-actions";
 import { generateSlug } from "@/lib/slug";
 
 interface ProjectDialogsProps {
@@ -17,10 +17,13 @@ interface ProjectDialogsProps {
   selectedProject: ProjectData | null;
   projectName: string;
   setProjectName: (name: string) => void;
+  suffix: string;
   isLoading: boolean;
-  setIsLoading: (loading: boolean) => void;
+  error?: string | null;
   closeDialog: () => void;
-  onConfirm: (type: DialogType, name: string, project: ProjectData | null) => void;
+  onCreate: () => Promise<void>;
+  onRename: () => Promise<void>;
+  onDelete: () => Promise<void>;
 }
 
 export function ProjectDialogs({
@@ -28,25 +31,29 @@ export function ProjectDialogs({
   selectedProject,
   projectName,
   setProjectName,
+  suffix,
   isLoading,
-  setIsLoading,
+  error,
   closeDialog,
-  onConfirm,
+  onCreate,
+  onRename,
+  onDelete,
 }: ProjectDialogsProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const slugPreview = generateSlug(projectName);
+  const slugPreview = projectName && suffix ? `${generateSlug(projectName, { asciiOnly: true })}-${suffix}` : "";
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!projectName.trim() && activeDialog !== "delete") return;
     
-    setIsLoading(true);
-    // Simulate short delay
-    setTimeout(() => {
-      onConfirm(activeDialog, projectName, selectedProject);
-      closeDialog();
-    }, 400);
+    if (activeDialog === "create") {
+      await onCreate();
+    } else if (activeDialog === "rename") {
+      await onRename();
+    } else if (activeDialog === "delete") {
+      await onDelete();
+    }
   };
 
   useEffect(() => {
@@ -82,7 +89,12 @@ export function ProjectDialogs({
             </div>
             {projectName && (
               <div className="text-xs text-text-muted">
-                Slug: <span className="font-mono text-accent-primary">{slugPreview}</span>
+                Room ID Preview: <span className="font-mono text-accent-primary">{slugPreview}</span>
+              </div>
+            )}
+            {error && (
+              <div className="text-xs text-state-error bg-state-error/10 border border-state-error/20 rounded-lg p-2 font-medium">
+                {error}
               </div>
             )}
             <DialogFooter>
@@ -117,6 +129,11 @@ export function ProjectDialogs({
                 disabled={isLoading}
               />
             </div>
+            {error && (
+              <div className="text-xs text-state-error bg-state-error/10 border border-state-error/20 rounded-lg p-2 font-medium">
+                {error}
+              </div>
+            )}
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={closeDialog} disabled={isLoading} className="text-text-secondary hover:text-text-primary">
                 Cancel
@@ -137,6 +154,11 @@ export function ProjectDialogs({
               Are you sure you want to delete <span className="font-medium text-text-primary">{selectedProject?.name}</span>? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {error && (
+            <div className="text-xs text-state-error bg-state-error/10 border border-state-error/20 rounded-lg p-2 mt-2 font-medium">
+              {error}
+            </div>
+          )}
           <DialogFooter className="mt-4">
             <Button type="button" variant="ghost" onClick={closeDialog} disabled={isLoading} className="text-text-secondary hover:text-text-primary">
               Cancel
