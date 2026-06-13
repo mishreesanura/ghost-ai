@@ -64,16 +64,20 @@ function LiveblocksConnectionMonitor({
   return <>{children}</>;
 }
 
+import { SaveStatus } from "@/hooks/use-canvas-autosave";
+
 function LiveblocksWithTimeout({
   projectId,
   onTimeout,
   isTemplatesOpen,
   onCloseTemplates,
+  onSaveStatusChange,
 }: {
   projectId: string;
   onTimeout: () => void;
   isTemplatesOpen: boolean;
   onCloseTemplates: () => void;
+  onSaveStatusChange: (status: SaveStatus) => void;
 }) {
   return (
     <LiveblocksProvider authEndpoint="/api/liveblocks-auth">
@@ -82,11 +86,17 @@ function LiveblocksWithTimeout({
         initialPresence={{
           cursor: null,
           isThinking: false,
+          thinking: false,
         }}
       >
         <LiveblocksConnectionMonitor onTimeout={onTimeout}>
           <ReactFlowProvider>
-            <LiveblocksCanvas isTemplatesOpen={isTemplatesOpen} onCloseTemplates={onCloseTemplates} />
+            <LiveblocksCanvas
+              projectId={projectId}
+              isTemplatesOpen={isTemplatesOpen}
+              onCloseTemplates={onCloseTemplates}
+              onSaveStatusChange={onSaveStatusChange}
+            />
           </ReactFlowProvider>
         </LiveblocksConnectionMonitor>
       </RoomProvider>
@@ -100,12 +110,14 @@ interface CollaborativeCanvasWrapperProps {
   projectId: string;
   isTemplatesOpen: boolean;
   onCloseTemplates: () => void;
+  onSaveStatusChange: (status: SaveStatus) => void;
 }
 
 export function CollaborativeCanvasWrapper({
   projectId,
   isTemplatesOpen,
   onCloseTemplates,
+  onSaveStatusChange,
 }: CollaborativeCanvasWrapperProps) {
   const [useLocal, setUseLocal] = useState(false);
 
@@ -118,7 +130,12 @@ export function CollaborativeCanvasWrapper({
   if (useLocal) {
     return (
       <ReactFlowProvider>
-        <LocalCanvas isTemplatesOpen={isTemplatesOpen} onCloseTemplates={onCloseTemplates} />
+        <LocalCanvas
+          projectId={projectId}
+          isTemplatesOpen={isTemplatesOpen}
+          onCloseTemplates={onCloseTemplates}
+          onSaveStatusChange={onSaveStatusChange}
+        />
       </ReactFlowProvider>
     );
   }
@@ -129,7 +146,12 @@ export function CollaborativeCanvasWrapper({
       onError={handleLiveblocksError}
       fallback={
         <ReactFlowProvider>
-          <LocalCanvas isTemplatesOpen={isTemplatesOpen} onCloseTemplates={onCloseTemplates} />
+          <LocalCanvas
+            projectId={projectId}
+            isTemplatesOpen={isTemplatesOpen}
+            onCloseTemplates={onCloseTemplates}
+            onSaveStatusChange={onSaveStatusChange}
+          />
         </ReactFlowProvider>
       }
     >
@@ -138,6 +160,7 @@ export function CollaborativeCanvasWrapper({
         onTimeout={handleLiveblocksError}
         isTemplatesOpen={isTemplatesOpen}
         onCloseTemplates={onCloseTemplates}
+        onSaveStatusChange={onSaveStatusChange}
       />
     </LiveblocksErrorBoundary>
   );

@@ -187,10 +187,16 @@ export function ShapePanel() {
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, shapeDef: ShapeDef) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const grabX = e.clientX - rect.left;
+      const grabY = e.clientY - rect.top;
+
       const payload = {
         shape: shapeDef.id,
         width: shapeDef.width,
         height: shapeDef.height,
+        grabX,
+        grabY,
       };
 
       e.dataTransfer.setData("text/plain", JSON.stringify(payload));

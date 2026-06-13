@@ -10,6 +10,8 @@ import { useProjectActions, ProjectData } from "@/hooks/use-project-actions";
 import { useUser } from "@clerk/nextjs";
 import { ShareDialog } from "@/components/editor/share-dialog";
 import { CollaborativeCanvasWrapper } from "@/components/editor/collaborative-canvas-wrapper";
+import { AiSidebar } from "@/components/editor/ai-sidebar";
+import { SaveStatus } from "@/hooks/use-canvas-autosave";
 
 interface WorkspaceClientProps {
   project: {
@@ -31,6 +33,7 @@ export function WorkspaceClient({
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
   const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
 
   const { user } = useUser();
   const isOwner = user?.id === project.ownerId;
@@ -65,6 +68,8 @@ export function WorkspaceClient({
         onToggleRightSidebar={() => setIsRightSidebarOpen((prev) => !prev)}
         onShare={handleShare}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
+        saveStatus={saveStatus}
+        showUserButton={false}
       />
 
       {/* Workspace Body container */}
@@ -122,46 +127,16 @@ export function WorkspaceClient({
               projectId={project.id}
               isTemplatesOpen={isTemplatesOpen}
               onCloseTemplates={() => setIsTemplatesOpen(false)}
+              onSaveStatusChange={setSaveStatus}
             />
           </div>
         </main>
 
-        {/* Right Collapsible AI Chat Sidebar Placeholder */}
-        <aside
-          className={`fixed top-16 right-0 bottom-0 z-20 flex w-80 flex-col border-l border-default bg-surface/95 backdrop-blur-md text-text-primary transition-transform duration-300 ease-in-out shadow-2xl ${
-            isRightSidebarOpen ? "translate-x-0" : "translate-x-full"
-          }`}
-        >
-          {/* AI Header */}
-          <div className="flex h-16 items-center justify-between border-b border-default px-6 shrink-0">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-accent-ai" />
-              <span className="text-sm font-semibold text-text-primary">AI Assistant</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsRightSidebarOpen(false)}
-              className="text-text-muted hover:text-text-primary hover:bg-subtle/50 h-8 w-8 rounded-lg"
-              aria-label="Close AI panel"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* AI Scrollable Workspace Panel */}
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4 overflow-y-auto">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-ai/10 text-accent-ai-text border border-accent-ai/20 shadow-[0_0_15px_rgba(100,87,249,0.1)]">
-              <Sparkles className="h-6 w-6" strokeWidth={1.5} />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-medium text-text-primary">AI Chat Placeholder</h3>
-              <p className="text-xs text-text-muted max-w-[200px] leading-normal">
-                Prompted system architectures and technical specification generators will integrate here.
-              </p>
-            </div>
-          </div>
-        </aside>
+        {/* Right Collapsible AI Chat Sidebar */}
+        <AiSidebar
+          isOpen={isRightSidebarOpen}
+          onClose={() => setIsRightSidebarOpen(false)}
+        />
 
       </div>
     </div>

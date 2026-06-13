@@ -11,6 +11,8 @@ import {
   Panel,
   useNodesState,
   useEdgesState,
+  useNodes,
+  useEdges,
   type OnNodesChange,
   type OnEdgesChange,
   type OnConnect,
@@ -21,10 +23,12 @@ import { CanvasNodeComponent } from "./canvas-node";
 import { CanvasEdgeComponent } from "./canvas-edge";
 import { ShapePanel } from "./shape-panel";
 import { CanvasNode, CanvasEdge } from "@/types/canvas";
-import { useLiveblocksFlow, Cursors } from "@liveblocks/react-flow";
-import { useUndo, useRedo, useCanUndo, useCanRedo } from "@liveblocks/react";
+import { useLiveblocksFlow } from "@liveblocks/react-flow";
+import { useUndo, useRedo, useCanUndo, useCanRedo, useMyPresence, useOthers } from "@liveblocks/react";
 import { CanvasControls } from "./canvas-controls";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { AvatarGroup } from "./avatar-group";
+import { CanvasCursors } from "./canvas-cursors";
 
 // ---------- shared drag-and-drop logic ----------
 
@@ -51,12 +55,18 @@ function useDragDrop(
 
       try {
         const payload = JSON.parse(rawPayload);
-        const { shape, width, height } = payload;
+        const { shape, width, height, grabX = 20, grabY = 20 } = payload;
         if (!shape) return;
 
+        // Bounding rect of the canvas container
+        const containerRect = event.currentTarget.getBoundingClientRect();
+
+        // Calculate drop position centering the node at the cursor.
+        // screenToFlowPosition converts screen (client) coordinates to canvas/flow space
+        // by subtracting the container bounding rect offset and applying the current zoom and pan.
         const position = screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
+          x: event.clientX - width / 2,
+          y: event.clientY - height / 2,
         });
 
         nodeCounterRef.current += 1;
@@ -104,6 +114,8 @@ interface CanvasSurfaceProps {
   redo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  onPointerMove?: React.PointerEventHandler<HTMLDivElement>;
+  onPointerLeave?: React.PointerEventHandler<HTMLDivElement>;
 }
 
 const defaultEdgeOptions = {
@@ -133,6 +145,8 @@ function CanvasSurface({
   redo,
   canUndo,
   canRedo,
+  onPointerMove,
+  onPointerLeave,
 }: CanvasSurfaceProps) {
   const nodeTypes = React.useMemo(
     () => ({
@@ -148,8 +162,56 @@ function CanvasSurface({
     []
   );
 
+  const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const allNodes = useNodes<CanvasNode>();
+  const allEdges = useEdges<CanvasEdge>();
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") {
+        return;
+      }
+
+      const target = event.target as HTMLElement;
+      if (
+        !target ||
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable ||
+        target.closest("[contenteditable]")
+      ) {
+        return;
+      }
+
+      // gets currently selected nodes using useNodes() filtered by selected state
+      const selectedNodes = allNodes.filter((node) => node.selected);
+
+      // gets currently selected edges using useEdges() filtered by selected state
+      const selectedEdges = allEdges.filter((edge) => edge.selected);
+
+      if (selectedNodes.length > 0 || selectedEdges.length > 0) {
+        event.preventDefault();
+        onDelete?.({ nodes: selectedNodes, edges: selectedEdges });
+      }
+    };
+
+    const wrapper = wrapperRef.current;
+    if (wrapper) {
+      wrapper.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      if (wrapper) {
+        wrapper.removeEventListener("keydown", handleKeyDown);
+      }
+    };
+  }, [allNodes, allEdges, onDelete]);
+
   return (
-    <div style={{ height: "100%", width: "100%", position: "absolute", inset: 0, overflow: "hidden" }} className="bg-base">
+    <div
+      ref={wrapperRef}
+      style={{ height: "100%", width: "100%", position: "absolute", inset: 0, overflow: "hidden" }}
+      className="bg-base"
+    >
       {isLoading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-base/60 backdrop-blur-sm pointer-events-none">
           <div className="flex flex-col items-center gap-3">
@@ -174,7 +236,10 @@ function CanvasSurface({
         onDragOver={onDragOver}
         onDrop={onDrop}
         defaultEdgeOptions={defaultEdgeOptions}
+        onPointerMove={onPointerMove}
+        onPointerLeave={onPointerLeave}
         fitView
+        deleteKeyCode={null}
         style={{ height: "100%", width: "100%" }}
       >
         {children}
@@ -206,17 +271,25 @@ function CanvasSurface({
   );
 }
 
+import { useCanvasAutosave, type SaveStatus } from "@/hooks/use-canvas-autosave";
 import { StarterTemplatesModal } from "./starter-templates-modal";
 import { CanvasTemplate } from "./starter-templates";
 
 // ---------- local-only canvas (no Liveblocks) ----------
 
 interface CanvasProps {
+  projectId: string;
   isTemplatesOpen: boolean;
   onCloseTemplates: () => void;
+  onSaveStatusChange: (status: SaveStatus) => void;
 }
 
-export function LocalCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasProps) {
+export function LocalCanvas({
+  projectId,
+  isTemplatesOpen,
+  onCloseTemplates,
+  onSaveStatusChange,
+}: CanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
   const reactFlowInstance = useReactFlow();
@@ -224,6 +297,44 @@ export function LocalCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasProps) 
   const { onDragOver, onDrop } = useDragDrop(screenToFlowPosition, onNodesChange);
 
   useKeyboardShortcuts({ reactFlowInstance });
+
+  const [isInitialized, setIsInitialized] = React.useState(false);
+
+  // Load saved canvas state on mount for Local mode
+  React.useEffect(() => {
+    const loadSavedState = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/canvas`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && (data.nodes?.length > 0 || data.edges?.length > 0)) {
+            setNodes(data.nodes);
+            setEdges(data.edges);
+            setTimeout(() => {
+              reactFlowInstance.fitView({ duration: 300 });
+            }, 100);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load saved local canvas state:", error);
+      }
+      setIsInitialized(true);
+    };
+
+    loadSavedState();
+  }, [projectId, setNodes, setEdges, reactFlowInstance]);
+
+  // Hook up autosave for Local mode
+  const { saveStatus } = useCanvasAutosave({
+    projectId,
+    nodes,
+    edges,
+    isInitialized,
+  });
+
+  React.useEffect(() => {
+    onSaveStatusChange(saveStatus);
+  }, [saveStatus, onSaveStatusChange]);
 
   const handleConnect: OnConnect = React.useCallback(
     (connection: Connection) => {
@@ -261,6 +372,9 @@ export function LocalCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasProps) 
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      <Panel position="top-right" className="!mt-4 !mr-4 z-40">
+        <AvatarGroup others={[]} />
+      </Panel>
       <StarterTemplatesModal
         isOpen={isTemplatesOpen}
         onClose={onCloseTemplates}
@@ -272,7 +386,12 @@ export function LocalCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasProps) 
 
 // ---------- Liveblocks-connected canvas ----------
 
-export function LiveblocksCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasProps) {
+export function LiveblocksCanvas({
+  projectId,
+  isTemplatesOpen,
+  onCloseTemplates,
+  onSaveStatusChange,
+}: CanvasProps) {
   const {
     nodes,
     edges,
@@ -286,6 +405,8 @@ export function LiveblocksCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasPr
     edges: { initial: [] },
   });
 
+  const others = useOthers();
+
   const reactFlowInstance = useReactFlow();
   const { screenToFlowPosition } = reactFlowInstance;
   const { onDragOver, onDrop } = useDragDrop(screenToFlowPosition, onNodesChange);
@@ -294,8 +415,81 @@ export function LiveblocksCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasPr
   const redo = useRedo();
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
+  const [_, updateMyPresence] = useMyPresence();
 
   useKeyboardShortcuts({ reactFlowInstance, undo, redo });
+
+  const [isInitialized, setIsInitialized] = React.useState(false);
+
+  // Load saved canvas state on mount if room is empty
+  React.useEffect(() => {
+    if (isLoading) return;
+
+    const loadSavedState = async () => {
+      // Check if room is empty
+      const currentNodes = nodes || [];
+      const currentEdges = edges || [];
+      if (currentNodes.length === 0 && currentEdges.length === 0) {
+        try {
+          const res = await fetch(`/api/projects/${projectId}/canvas`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.nodes?.length > 0 || data.edges?.length > 0)) {
+              // Add retrieved nodes
+              const nodeChanges = data.nodes.map((node: any) => ({
+                type: "add" as const,
+                item: node,
+              }));
+              onNodesChange(nodeChanges);
+
+              // Add retrieved edges
+              const edgeChanges = data.edges.map((edge: any) => ({
+                type: "add" as const,
+                item: edge,
+              }));
+              onEdgesChange(edgeChanges);
+
+              setTimeout(() => {
+                reactFlowInstance.fitView({ duration: 300 });
+              }, 100);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load saved canvas state:", error);
+        }
+      }
+      setIsInitialized(true);
+    };
+
+    loadSavedState();
+  }, [isLoading, projectId, nodes, edges, onNodesChange, onEdgesChange, reactFlowInstance]);
+
+  // Hook up autosave for Liveblocks mode
+  const { saveStatus } = useCanvasAutosave({
+    projectId,
+    nodes: nodes ?? [],
+    edges: edges ?? [],
+    isInitialized,
+  });
+
+  React.useEffect(() => {
+    onSaveStatusChange(saveStatus);
+  }, [saveStatus, onSaveStatusChange]);
+
+  const handlePointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const flowPos = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      updateMyPresence({ cursor: flowPos });
+    },
+    [reactFlowInstance, updateMyPresence]
+  );
+
+  const handlePointerLeave = React.useCallback(() => {
+    updateMyPresence({ cursor: null });
+  }, [updateMyPresence]);
 
   const handleImportTemplate = React.useCallback(
     (template: CanvasTemplate) => {
@@ -341,8 +535,13 @@ export function LiveblocksCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasPr
       redo={redo}
       canUndo={canUndo}
       canRedo={canRedo}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
     >
-      <Cursors />
+      <CanvasCursors />
+      <Panel position="top-right" className="!mt-4 !mr-4 z-40">
+        <AvatarGroup others={others} />
+      </Panel>
       <StarterTemplatesModal
         isOpen={isTemplatesOpen}
         onClose={onCloseTemplates}
@@ -351,3 +550,4 @@ export function LiveblocksCanvas({ isTemplatesOpen, onCloseTemplates }: CanvasPr
     </CanvasSurface>
   );
 }
+

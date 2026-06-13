@@ -4,6 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { PanelLeftOpen, PanelLeftClose, PanelRightClose, Share2, Sparkles, LayoutTemplate } from "lucide-react";
 import { Show, UserButton } from "@clerk/nextjs";
+import { SaveStatus } from "@/hooks/use-canvas-autosave";
 
 interface WorkspaceNavbarProps {
   projectName: string;
@@ -13,6 +14,8 @@ interface WorkspaceNavbarProps {
   onToggleRightSidebar: () => void;
   onShare?: () => void;
   onOpenTemplates?: () => void;
+  saveStatus?: SaveStatus;
+  showUserButton?: boolean;
 }
 
 export function WorkspaceNavbar({
@@ -23,6 +26,8 @@ export function WorkspaceNavbar({
   onToggleRightSidebar,
   onShare,
   onOpenTemplates,
+  saveStatus,
+  showUserButton = true,
 }: WorkspaceNavbarProps) {
   return (
     <header className="flex h-16 w-full items-center justify-between border-b border-default bg-surface px-6 shrink-0 z-30">
@@ -53,8 +58,37 @@ export function WorkspaceNavbar({
         </span>
       </div>
 
-      {/* Right section: Templates, Share, AI Sidebar toggle, and User button */}
+      {/* Right section: Save Indicator, Templates, Share, AI Sidebar toggle, and User button */}
       <div className="flex items-center gap-3 shrink-0">
+        {saveStatus && (
+          <div className="flex items-center gap-1.5 text-xs text-text-muted select-none mr-2 bg-subtle/30 px-2.5 py-1 rounded-lg border border-default/40">
+            {saveStatus === "saving" && (
+              <>
+                <span className="h-2 w-2 rounded-full bg-state-warning animate-pulse" />
+                <span>Saving...</span>
+              </>
+            )}
+            {saveStatus === "saved" && (
+              <>
+                <span className="h-2 w-2 rounded-full bg-state-success" />
+                <span className="text-text-secondary">Saved</span>
+              </>
+            )}
+            {saveStatus === "error" && (
+              <>
+                <span className="h-2 w-2 rounded-full bg-state-error animate-bounce" />
+                <span className="text-state-error font-medium">Save Error</span>
+              </>
+            )}
+            {saveStatus === "idle" && (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-text-muted/30" />
+                <span>Saved</span>
+              </>
+            )}
+          </div>
+        )}
+
         <Button
           variant="outline"
           size="sm"
@@ -93,11 +127,14 @@ export function WorkspaceNavbar({
           )}
         </Button>
 
-        <div className="h-6 w-[1px] bg-border-default" />
-
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
+        {showUserButton && (
+          <>
+            <div className="h-6 w-[1px] bg-border-default" />
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </>
+        )}
       </div>
     </header>
   );
